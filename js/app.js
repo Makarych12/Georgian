@@ -204,6 +204,11 @@
       heroIntro.style.setProperty('--stagger-idx', '0');
     }
 
+    const canHoverFine = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if (!canHoverFine) {
+      return;
+    }
+
     let lastHoveredCard = null;
 
     function resetTilt(el) {
@@ -228,7 +233,7 @@
       card.style.setProperty('--mouse-x', relX + 'px');
       card.style.setProperty('--mouse-y', relY + 'px');
 
-      // Деликатный 3D-наклон на плитках алфавита и карточках викторин
+      // Деликатный 3D-наклон на плитках алфавита и карточках викторин (только для мыши)
       if (card.classList.contains('letter-tile') || card.classList.contains('quiz-mode-card')) {
         const normX = (relX / Math.max(1, rect.width)) - 0.5;
         const normY = (relY / Math.max(1, rect.height)) - 0.5;
@@ -399,7 +404,7 @@
       renderQuizHub();
     }
 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
   }
 
   /* ========================================================================
@@ -503,7 +508,7 @@
       const pct = st.total ? Math.round((st.learned / st.total) * 100) : 0;
       const staggerDelayIdx = Math.min(i, 22);
       const confNote = state.alphabetFilter === 'confusable' && item.confusableWith.length
-        ? '<div style="font-size:0.73rem;color:var(--accent-bright);margin-bottom:5px">Сравните с: <strong lang="ka">' + escapeHtml(item.confusableWith.join(' · ')) + '</strong></div>'
+        ? '<div class="tile-confusable-hint">Ср.: <strong lang="ka">' + escapeHtml(item.confusableWith.join(' · ')) + '</strong></div>'
         : '';
 
       return (
@@ -653,6 +658,10 @@
 
     document.getElementById('session-counter-label').textContent = 'Сессия завершена';
     document.getElementById('session-progress-fill').style.width = '100%';
+    ['btn-prev-card', 'btn-mob-prev-card', 'btn-next-card', 'btn-mob-next-card'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.disabled = true;
+    });
 
     document.getElementById('btn-finish-to-quiz').addEventListener('click', function () {
       const forced = state.deckMode.length === 1 ? state.deckMode : null;
@@ -697,8 +706,19 @@
     const total = state.sessionQueue.length;
     const currentNum = state.sessionIndex + 1;
     document.getElementById('session-counter-label').textContent =
-      'Карточка ' + currentNum + ' из ' + total + ' (всего в словаре: ' + CARDS.length + ')';
+      'Карточка ' + currentNum + ' / ' + total + ' · Словарь: ' + CARDS.length;
     document.getElementById('session-progress-fill').style.width = Math.round((currentNum / total) * 100) + '%';
+
+    const atStart = state.sessionIndex <= 0;
+    const atEnd = state.sessionIndex + 1 >= total;
+    ['btn-prev-card', 'btn-mob-prev-card'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.disabled = atStart;
+    });
+    ['btn-next-card', 'btn-mob-next-card'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.disabled = atEnd;
+    });
 
     const boxLabel = prog.box === 0 ? 'Новая' : ('Бокс ' + prog.box + '/5');
     const categoryText = card.category ? (card.category + ' · ') : '';
@@ -734,11 +754,11 @@
         '<div class="audio-controls-row">' +
           '<button class="btn-audio" id="btn-card-audio-norm" type="button" data-play-src="' + escapeHtml(card.audioNormal) + '" data-play-fallback="' + escapeHtml(card.wordGeo) + '">' +
             ICONS.speaker +
-            '<span>Обычная скорость</span>' +
+            '<span>Слушать (1×)</span>' +
           '</button>' +
           '<button class="btn-audio btn-audio-slow" id="btn-card-audio-slow" type="button" data-play-src="' + escapeHtml(card.audioNormal) + '" data-play-fallback="' + escapeHtml(card.wordGeo) + '" data-play-slow="1">' +
             ICONS.slow +
-            '<span>Замедленно (0.6×)</span>' +
+            '<span>Медленно (0.6×)</span>' +
           '</button>' +
         '</div>' +
 
@@ -1081,7 +1101,7 @@
                 '</svg>' +
                 '<canvas id="calligraphy-canvas" class="calligraphy-canvas" width="270" height="270"></canvas>' +
               '</div>' +
-              '<div style="display:flex;justify-content:center;gap:8px;margin-top:10px">' +
+              '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px">' +
                 '<button class="btn btn-ghost btn-sm" id="btn-replay-stroke" type="button">Анимация контура</button>' +
                 '<button class="btn btn-ghost btn-sm" id="btn-clear-canvas" type="button">Очистить</button>' +
                 '<button class="btn btn-primary btn-sm" id="btn-check-canvas" type="button">Проверить</button>' +
@@ -1089,7 +1109,7 @@
             '</div>' +
 
             '<div style="display:flex;flex-direction:column;gap:12px">' +
-              '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
+              '<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px">' +
                 '<div>' +
                   '<span class="eyebrow-badge" style="margin-bottom:4px">Буква № ' + meta.index + ' · ' + escapeHtml(meta.groupLabel) + '</span>' +
                   '<h3 style="margin:0;font-size:1.5rem;font-family:var(--font-geo-serif)" lang="ka">' + escapeHtml(meta.letter) + ' — ' + escapeHtml(meta.nameGeo) + ' (' + escapeHtml(meta.nameRu) + ')</h3>' +
@@ -1150,36 +1170,62 @@
     ctx.lineWidth = 13;
     ctx.strokeStyle = getCalligraphyInkColor(getCurrentTheme());
 
-    function getPos(e) {
+    function getPos(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       return {
-        x: ((e.clientX - rect.left) / rect.width) * canvas.width,
-        y: ((e.clientY - rect.top) / rect.height) * canvas.height
+        x: ((clientX - rect.left) / Math.max(1, rect.width)) * canvas.width,
+        y: ((clientY - rect.top) / Math.max(1, rect.height)) * canvas.height
       };
     }
 
-    canvas.addEventListener('pointerdown', function (e) {
+    function startStrokeAt(clientX, clientY) {
       drawing = true;
       hasStrokes = true;
       ctx.strokeStyle = getCalligraphyInkColor(getCurrentTheme());
-      if (canvas.setPointerCapture) {
-        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-      }
-      const p = getPos(e);
+      const p = getPos(clientX, clientY);
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
-    });
+    }
 
-    canvas.addEventListener('pointermove', function (e) {
+    function moveStrokeTo(clientX, clientY) {
       if (!drawing) return;
-      const p = getPos(e);
+      const p = getPos(clientX, clientY);
       ctx.lineTo(p.x, p.y);
       ctx.stroke();
-    });
+    }
 
     function endStroke() {
       drawing = false;
     }
+
+    // Блокируем скролл страницы при рисовании пальцем по холсту во всех мобильных браузерах (DuckDuckGo / Safari / Chrome)
+    canvas.addEventListener('touchstart', function (e) {
+      if (e.cancelable) e.preventDefault();
+      if (!window.PointerEvent && e.touches && e.touches.length === 1) {
+        startStrokeAt(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', function (e) {
+      if (e.cancelable) e.preventDefault();
+      if (!window.PointerEvent && e.touches && e.touches.length === 1) {
+        moveStrokeTo(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', endStroke, { passive: true });
+    canvas.addEventListener('touchcancel', endStroke, { passive: true });
+
+    canvas.addEventListener('pointerdown', function (e) {
+      if (canvas.setPointerCapture) {
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      startStrokeAt(e.clientX, e.clientY);
+    });
+
+    canvas.addEventListener('pointermove', function (e) {
+      moveStrokeTo(e.clientX, e.clientY);
+    });
 
     canvas.addEventListener('pointerup', endStroke);
     canvas.addEventListener('pointercancel', endStroke);
@@ -1340,7 +1386,7 @@
         earBox.innerHTML =
           '<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px">' +
             '<span>Какое из двух слов сейчас прозвучало?</span>' +
-            '<div style="display:flex;gap:8px">' +
+            '<div style="display:flex;flex-wrap:wrap;gap:8px">' +
               '<button class="btn btn-ghost btn-sm" type="button" data-play-src="' + escapeHtml(audSrc) + '" data-play-fallback="' + escapeHtml(chosen.wordGeo) + '">' + ICONS.speaker + '</button>' +
               '<button class="btn btn-outline btn-sm" data-ear-pick="left" type="button" lang="ka">' + escapeHtml(mp.left.wordGeo) + '</button>' +
               '<button class="btn btn-outline btn-sm" data-ear-pick="right" type="button" lang="ka">' + escapeHtml(mp.right.wordGeo) + '</button>' +
@@ -1663,13 +1709,13 @@
           '</div>' +
           '<button class="tile-audio-mini" style="position:static" type="button" data-play-src="' + escapeHtml(card.audioNormal) + '" data-play-fallback="' + escapeHtml(card.wordGeo) + '">' + ICONS.speaker + '</button>' +
         '</div>' +
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">' +
+        '<div class="qa-antonym-grid">' +
           options.map(function (opt) {
             return (
               '<button class="qa-option-card" data-qa-choice="' + escapeHtml(opt.wordGeo) + '" type="button">' +
                 '<img src="' + escapeHtml(opt.imageUrl) + '" alt="' + escapeHtml(opt.translationRu) + '" />' +
-                '<div>' +
-                  '<div style="font-family:var(--font-geo-serif);font-size:1.25rem;font-weight:700" lang="ka">' + escapeHtml(opt.wordGeo) + '</div>' +
+                '<div style="min-width:0">' +
+                  '<div style="font-family:var(--font-geo-serif);font-size:1.25rem;font-weight:700;overflow-wrap:anywhere" lang="ka">' + escapeHtml(opt.wordGeo) + '</div>' +
                   '<div style="font-size:0.82rem;color:var(--slate-muted)">«' + escapeHtml(opt.translitRu) + '»</div>' +
                 '</div>' +
               '</button>'
@@ -1685,7 +1731,7 @@
         '<span style="font-weight:700;color:var(--green)">Счёт: ' + qs.score + '</span>' +
       '</div>' +
       bodyHtml +
-      '<div id="qa-feedback-bar" class="is-hidden" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-warm);display:flex;align-items:center;justify-content:space-between;gap:12px"></div>';
+      '<div id="qa-feedback-bar" class="is-hidden" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-warm);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px"></div>';
 
     document.getElementById('qa-exit-btn').addEventListener('click', renderQuizHub);
 
@@ -1920,7 +1966,7 @@
           );
         }).join('') +
       '</div>' +
-      '<div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--border-warm);display:flex;justify-content:space-between;align-items:center">' +
+      '<div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--border-warm);display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center">' +
         '<span style="font-size:0.8rem;color:var(--slate-muted)">Прогресс и выбранная тема сохраняются в вашем браузере.</span>' +
         '<button class="btn btn-ghost btn-sm" id="btn-reset-progress" type="button">Сбросить прогресс</button>' +
       '</div>';
@@ -2036,21 +2082,28 @@
       startQuiz('daily', forced);
     });
 
-    document.getElementById('btn-prev-card').addEventListener('click', function () {
+    function stepCardPrev() {
       if (state.sessionIndex > 0) {
         AudioEngine.stop();
         state.sessionIndex -= 1;
         renderActiveCard();
       }
-    });
+    }
 
-    document.getElementById('btn-next-card').addEventListener('click', function () {
+    function stepCardNext() {
       if (state.sessionIndex + 1 < state.sessionQueue.length) {
         AudioEngine.stop();
         state.sessionIndex += 1;
         renderActiveCard();
       }
-    });
+    }
+
+    document.getElementById('btn-prev-card').addEventListener('click', stepCardPrev);
+    document.getElementById('btn-next-card').addEventListener('click', stepCardNext);
+    const mobPrevBtn = document.getElementById('btn-mob-prev-card');
+    const mobNextBtn = document.getElementById('btn-mob-next-card');
+    if (mobPrevBtn) mobPrevBtn.addEventListener('click', stepCardPrev);
+    if (mobNextBtn) mobNextBtn.addEventListener('click', stepCardNext);
 
     document.querySelectorAll('[data-trainer-tab]').forEach(function (btn) {
       btn.addEventListener('click', function () {
