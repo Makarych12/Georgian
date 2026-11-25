@@ -268,17 +268,19 @@
           </svg>
         </button>
 
-        <div class="flip-scene" id="flip-scene">
-          <!-- Индикаторы свайпа влево/вправо -->
-          <div class="swipe-badge swipe-badge-left" id="swipe-badge-left">Повторить</div>
-          <div class="swipe-badge swipe-badge-right" id="swipe-badge-right">Знаю!</div>
+        <div class="flip-scene flashcard-scene" id="flip-scene">
+          <!-- Ненавязчивые индикаторы горизонтального перелистывания колоды -->
+          <div class="swipe-badge swipe-badge-prev" id="swipe-badge-prev">← Предыдущая</div>
+          <div class="swipe-badge swipe-badge-next" id="swipe-badge-next">Следующая →</div>
 
-          <div class="flip-card" id="flip-card" tabindex="0" role="region" aria-label="Двусторонняя карточка слова">
-            <!-- ЛИЦЕВАЯ СТОРОНА (FRONT) -->
-            <div class="card-face card-front" id="card-front-content"></div>
+          <div class="flashcard-mover" id="flashcard-mover">
+            <div class="flip-card flashcard-inner" id="flip-card" tabindex="0" role="region" aria-label="Двусторонняя карточка слова">
+              <!-- ЛИЦЕВАЯ СТОРОНА (FRONT) -->
+              <div class="card-face card-front" id="card-front-content"></div>
 
-            <!-- ОБОРОТНАЯ СТОРОНА (BACK) -->
-            <div class="card-face card-back" id="card-back-content"></div>
+              <!-- ОБОРОТНАЯ СТОРОНА (BACK) -->
+              <div class="card-face card-back" id="card-back-content"></div>
+            </div>
           </div>
         </div>
 
@@ -289,13 +291,32 @@
         </button>
       </div>
 
+      <!-- Крупная тактильная панель оценки запоминания по системе Лейтнера -->
+      <div class="card-leitner-bar" id="card-leitner-bar" role="group" aria-label="Оценка запоминания по системе Лейтнера">
+        <div class="leitner-caption">Оцените запоминание слова · свайп влево/вправо листает колоду</div>
+        <div class="leitner-buttons-grid">
+          <button class="btn-leitner btn-leitner-hard" data-grade="hard" type="button">
+            <span class="btn-leitner-title"><span class="dot dot-crimson"></span>Не помню</span>
+            <span class="btn-leitner-sub">Повтор через 2 шага</span>
+          </button>
+          <button class="btn-leitner btn-leitner-medium" data-grade="medium" type="button">
+            <span class="btn-leitner-title"><span class="dot dot-amber"></span>С трудом</span>
+            <span class="btn-leitner-sub">В конце сессии</span>
+          </button>
+          <button class="btn-leitner btn-leitner-know" data-grade="know" type="button">
+            <span class="btn-leitner-title"><span class="dot dot-green"></span>Знаю!</span>
+            <span class="btn-leitner-sub">В выученные (+интервал)</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Подсказка горячих клавиш и свайпов -->
       <div class="keyboard-hints">
-        <span><kbd>Пробел</kbd> перевернуть</span>
+        <span><kbd>Пробел</kbd> / тап по карточке — перевернуть</span>
         <span><kbd>A</kbd> обычная озвучка</span>
         <span><kbd>S</kbd> замедленно</span>
         <span><kbd>1</kbd> не помню · <kbd>2</kbd> с трудом · <kbd>3</kbd> знаю</span>
-        <span>Свайп влево / вправо на смартфоне</span>
+        <span><kbd>←</kbd> <kbd>→</kbd> или свайп — пред. / след. карточка</span>
       </div>
     </section>
 

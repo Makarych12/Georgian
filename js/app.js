@@ -63,8 +63,113 @@
       blitz: new Set(),
       daily: new Set()
     },
-    activeCanvasCtx: null
+    activeCanvasCtx: null,
+    timers: {
+      flip: null,
+      swipe: null,
+      grade: null
+    },
+    lastDragEndAt: 0
   };
+
+  let preloadedNextImg = null;
+  let cardResizeObserver = null;
+
+  function clearCardTimers() {
+    if (state.timers.flip) {
+      clearTimeout(state.timers.flip);
+      state.timers.flip = null;
+    }
+    if (state.timers.swipe) {
+      clearTimeout(state.timers.swipe);
+      state.timers.swipe = null;
+    }
+    if (state.timers.grade) {
+      clearTimeout(state.timers.grade);
+      state.timers.grade = null;
+    }
+    const cardEl = document.getElementById('flip-card');
+    if (cardEl) {
+      cardEl.classList.remove('is-flipping');
+    }
+    const moverEl = document.getElementById('flashcard-mover');
+    if (moverEl) {
+      moverEl.style.transition = '';
+      moverEl.style.transform = '';
+      moverEl.style.opacity = '';
+    }
+  }
+
+  function preloadNextCardImage() {
+    const nextIdx = state.sessionIndex + 1;
+    if (nextIdx >= 0 && nextIdx < state.sessionQueue.length) {
+      const nextCard = state.sessionQueue[nextIdx];
+      if (nextCard && nextCard.imageUrl) {
+        if (!preloadedNextImg) {
+          preloadedNextImg = new Image();
+          preloadedNextImg.decoding = 'async';
+        }
+        if (preloadedNextImg.getAttribute('data-preloaded-src') !== nextCard.imageUrl) {
+          preloadedNextImg.setAttribute('data-preloaded-src', nextCard.imageUrl);
+          preloadedNextImg.src = nextCard.imageUrl;
+        }
+        return;
+      }
+    }
+    if (preloadedNextImg) {
+      preloadedNextImg.removeAttribute('src');
+      preloadedNextImg.removeAttribute('data-preloaded-src');
+    }
+  }
+
+  function syncCardSceneHeight(animate) {
+    const cardEl = document.getElementById('flip-card');
+    const front = document.getElementById('card-front-content');
+    const back = document.getElementById('card-back-content');
+    if (!cardEl || !front || !back) return;
+    if (cardEl.classList.contains('is-flipping')) return;
+
+    const activeFace = state.isFlipped ? back : front;
+    const targetH = activeFace.offsetHeight;
+    if (targetH <= 0) {
+      cardEl.style.height = '';
+      return;
+    }
+
+    if (!animate) {
+      cardEl.classList.add('is-instant-height');
+      cardEl.style.height = targetH + 'px';
+      void cardEl.offsetHeight;
+      cardEl.classList.remove('is-instant-height');
+    } else {
+      cardEl.style.height = targetH + 'px';
+    }
+  }
+
+  function initCardResizeObserver() {
+    const front = document.getElementById('card-front-content');
+    const back = document.getElementById('card-back-content');
+    if (!front || !back) return;
+
+    if (typeof window.ResizeObserver === 'function') {
+      if (cardResizeObserver) {
+        cardResizeObserver.disconnect();
+      }
+      cardResizeObserver = new window.ResizeObserver(function () {
+        if (state.activeView === 'cards') {
+          syncCardSceneHeight(false);
+        }
+      });
+      cardResizeObserver.observe(front);
+      cardResizeObserver.observe(back);
+    } else {
+      window.addEventListener('resize', function () {
+        if (state.activeView === 'cards') {
+          syncCardSceneHeight(false);
+        }
+      }, { passive: true });
+    }
+  }
 
   /* ========================================================================
      УПРАВЛЕНИЕ ТЕМОЙ + CIRCULAR REVEAL (VIEW TRANSITIONS API)
@@ -369,9 +474,20 @@
      ======================================================================== */
   function switchView(viewName) {
     AudioEngine.stop();
-    if (state.quizState && state.quizState.timerId && viewName !== 'quizzes') {
-      clearInterval(state.quizState.timerId);
-      state.quizState.timerId = null;
+    clearCardTimers();
+
+    if (viewName !== 'trainer') {
+      state.activeCanvasCtx = null;
+    }
+    if (viewName !== 'quizzes') {
+      if (state.quizState && state.quizState.timerId) {
+        clearInterval(state.quizState.timerId);
+        state.quizState.timerId = null;
+      }
+      const arena = document.getElementById('quiz-arena');
+      if (arena && arena.innerHTML) {
+        arena.innerHTML = '';
+      }
     }
 
     state.activeView = viewName;
@@ -446,7 +562,7 @@
 
     box.innerHTML =
       '<div class="wod-photo-wrap">' +
-        '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" loading="eager" />' +
+        '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" loading="lazy" decoding="async" />' +
         '<span class="wod-tag">Слово дня · Буква ' + escapeHtml(card.letter) + '</span>' +
       '</div>' +
       '<div class="wod-body">' +
@@ -576,6 +692,7 @@
 
   function startCardSession(mode, focusCardId) {
     AudioEngine.stop();
+    clearCardTimers();
     state.deckMode = mode || 'leitner';
     state.isFlipped = false;
     state.hintVisible = false;
@@ -604,28 +721,63 @@
 
   function flipActiveCard(forceState) {
     const cardEl = document.getElementById('flip-card');
-    if (!cardEl || state.sessionIndex >= state.sessionQueue.length) return;
+    const front = document.getElementById('card-front-content');
+    const back = document.getElementById('card-back-content');
+    if (!cardEl || !front || !back || state.sessionIndex >= state.sessionQueue.length) return;
     const nextFlipped = typeof forceState === 'boolean' ? forceState : !state.isFlipped;
     if (nextFlipped === state.isFlipped) return;
 
     AudioEngine.stop();
+    if (state.timers.flip) {
+      clearTimeout(state.timers.flip);
+      state.timers.flip = null;
+    }
+
+    const fromFace = state.isFlipped ? back : front;
+    const fromH = fromFace.offsetHeight;
+
+    // Включаем обе грани в 3D-пространстве на время переворота и плавно ведём высоту контейнера
+    cardEl.classList.add('is-instant-height');
+    if (fromH > 0) {
+      cardEl.style.height = fromH + 'px';
+    }
+    cardEl.classList.add('is-flipping');
+    void cardEl.offsetHeight;
+    cardEl.classList.remove('is-instant-height');
+
+    const toFace = nextFlipped ? back : front;
+    const toH = toFace.offsetHeight;
+
     state.isFlipped = nextFlipped;
-
-    cardEl.classList.remove('anim-to-back', 'anim-to-front');
-    void cardEl.offsetWidth;
     cardEl.classList.toggle('is-flipped', state.isFlipped);
-    cardEl.classList.add(state.isFlipped ? 'anim-to-back' : 'anim-to-front');
+    if (toH > 0) {
+      cardEl.style.height = toH + 'px';
+    }
 
-    AudioEngine.haptic(14);
+    AudioEngine.haptic(12);
+
+    state.timers.flip = setTimeout(function () {
+      state.timers.flip = null;
+      cardEl.classList.remove('is-flipping');
+      syncCardSceneHeight(false);
+    }, 530);
   }
 
   function renderSessionComplete() {
     AudioEngine.stop();
+    clearCardTimers();
+    preloadNextCardImage();
+
     const front = document.getElementById('card-front-content');
     const back = document.getElementById('card-back-content');
     const cardEl = document.getElementById('flip-card');
-    cardEl.classList.remove('is-flipped', 'anim-to-back', 'anim-to-front');
+    const leitnerBar = document.getElementById('card-leitner-bar');
+    cardEl.classList.remove('is-flipped', 'is-flipping');
+    cardEl.style.transform = '';
     state.isFlipped = false;
+    if (leitnerBar) {
+      leitnerBar.classList.add('is-hidden');
+    }
 
     let titleText = 'Сессия интервального повторения завершена!';
     if (state.deckMode === 'all') {
@@ -640,17 +792,17 @@
     if (state.deckMode.length === 1) {
       const curMeta = getLetterMeta(state.deckMode);
       const nextMeta = ALPHABET[curMeta.index % ALPHABET.length];
-      nextLetterBtnHtml = '<button class="btn btn-ghost" id="btn-session-next-letter" type="button">Следующая буква: ' + escapeHtml(nextMeta.letter) + ' (' + escapeHtml(nextMeta.nameGeo) + ')</button>';
+      nextLetterBtnHtml = '<button class="btn btn-ghost" data-session-action="next-letter" type="button">Следующая буква: ' + escapeHtml(nextMeta.letter) + ' (' + escapeHtml(nextMeta.nameGeo) + ')</button>';
     }
 
     front.innerHTML =
-      '<div class="front-body" style="text-align:center;padding:42px 28px;align-items:center">' +
+      '<div class="front-body" data-no-flip="true" style="text-align:center;padding:36px 22px;align-items:center">' +
         '<div class="qm-icon-box" style="width:62px;height:62px;border-radius:50%">' + ICONS.award + '</div>' +
-        '<h3 style="font-family:var(--font-editorial);font-size:1.6rem;margin:4px 0">' + escapeHtml(titleText) + '</h3>' +
+        '<h3 style="font-family:var(--font-editorial);font-size:1.5rem;margin:4px 0">' + escapeHtml(titleText) + '</h3>' +
         '<p style="color:var(--slate-muted);max-width:46ch;margin:0 0 12px">Отличная работа! Теперь закрепите произношение, написание и антонимы в игровом мини-квизе.</p>' +
         '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px">' +
-          '<button class="btn btn-primary" id="btn-finish-to-quiz" type="button">Закрепить в мини-квизе</button>' +
-          '<button class="btn btn-outline" id="btn-restart-deck" type="button">Новая порция / повтор</button>' +
+          '<button class="btn btn-primary" data-session-action="finish-to-quiz" type="button">Закрепить в мини-квизе</button>' +
+          '<button class="btn btn-outline" data-session-action="restart-deck" type="button">Новая порция / повтор</button>' +
           nextLetterBtnHtml +
         '</div>' +
       '</div>';
@@ -663,30 +815,18 @@
       if (el) el.disabled = true;
     });
 
-    document.getElementById('btn-finish-to-quiz').addEventListener('click', function () {
-      const forced = state.deckMode.length === 1 ? state.deckMode : null;
-      switchView('quizzes');
-      startQuiz('daily', forced);
-    });
-    document.getElementById('btn-restart-deck').addEventListener('click', function () {
-      startCardSession(state.deckMode);
-    });
-    const nextBtn = document.getElementById('btn-session-next-letter');
-    if (nextBtn) {
-      nextBtn.addEventListener('click', function () {
-        const curMeta = getLetterMeta(state.deckMode);
-        const nextMeta = ALPHABET[curMeta.index % ALPHABET.length];
-        startCardSession(nextMeta.letter);
-      });
-    }
+    syncCardSceneHeight(false);
   }
 
-  function renderActiveCard() {
+  function renderActiveCard(slideDirection) {
     AudioEngine.stop();
+    clearCardTimers();
 
     const cardEl = document.getElementById('flip-card');
+    const moverEl = document.getElementById('flashcard-mover');
     const front = document.getElementById('card-front-content');
     const back = document.getElementById('card-back-content');
+    const leitnerBar = document.getElementById('card-leitner-bar');
     if (!cardEl || !front || !back) return;
 
     if (state.sessionIndex >= state.sessionQueue.length) {
@@ -694,11 +834,16 @@
       return;
     }
 
+    if (leitnerBar) {
+      leitnerBar.classList.remove('is-hidden');
+    }
+
     const card = state.sessionQueue[state.sessionIndex];
     const letterMeta = getLetterMeta(card.letter);
     const prog = Storage.getCardProgress(card.id);
 
-    cardEl.classList.remove('is-flipped', 'anim-to-back', 'anim-to-front');
+    cardEl.classList.add('is-instant-height');
+    cardEl.classList.remove('is-flipped', 'is-flipping');
     cardEl.style.transform = '';
     state.isFlipped = false;
     state.hintVisible = false;
@@ -728,8 +873,8 @@
 
     // ЛИЦЕВАЯ СТОРОНА (FRONT)
     front.innerHTML =
-      '<div class="front-photo-box" data-flip-trigger="true" title="Нажмите, чтобы перевернуть карточку">' +
-        '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.imageCaption) + '" />' +
+      '<div class="front-photo-box" title="Нажмите на карточку, чтобы перевернуть">' +
+        '<img id="active-card-front-img" src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.imageCaption) + '" loading="lazy" decoding="async" />' +
         '<div class="front-photo-overlay">' +
           '<div class="front-top-badges">' +
             '<span class="glass-pill" lang="ka">Буква ' + escapeHtml(card.letter) + ' · ' + escapeHtml(letterMeta.nameGeo) + '</span>' +
@@ -741,7 +886,7 @@
         '</div>' +
       '</div>' +
       '<div class="front-body">' +
-        '<div class="front-word-block" data-flip-trigger="true">' +
+        '<div class="front-word-block">' +
           '<p class="front-word-geo" lang="ka">' + highlightGeoWord(card.wordGeo, card.letter) + '</p>' +
           '<div class="front-transcription-row">' +
             '<span>' + highlightLatinTranslit(card.translitLat, letterMeta) + '</span>' +
@@ -775,9 +920,9 @@
             ICONS.spark +
             '<span>Показать намёк</span>' +
           '</button>' +
-          '<button class="btn btn-primary btn-sm" id="btn-flip-to-back" type="button">' +
+          '<button class="btn btn-primary btn-sm" id="btn-flip-to-back" data-flip-btn="to-back" type="button">' +
             ICONS.flip +
-            '<span>Перевернуть карточку</span>' +
+            '<span>Перевернуть</span>' +
           '</button>' +
         '</div>' +
       '</div>';
@@ -808,7 +953,7 @@
           '</div>' +
           '<div style="display:flex;gap:8px;align-items:center">' +
             '<button class="btn-audio btn-sm" type="button" data-play-src="' + escapeHtml(card.audioNormal) + '" data-play-fallback="' + escapeHtml(card.wordGeo) + '">' + ICONS.speaker + '<span>Слушать</span></button>' +
-            '<button class="btn btn-ghost btn-sm" id="btn-flip-to-front" type="button">' + ICONS.flip + '<span>Лицевая</span></button>' +
+            '<button class="btn btn-ghost btn-sm" id="btn-flip-to-front" data-flip-btn="to-front" type="button">' + ICONS.flip + '<span>Лицевая</span></button>' +
           '</div>' +
         '</div>' +
 
@@ -816,7 +961,7 @@
           '<div class="panel-mini-title">Контекст и связанная пара — Антоним</div>' +
           '<div class="antonym-cards-row">' +
             '<div class="mini-pair-card">' +
-              '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" />' +
+              '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" loading="lazy" decoding="async" />' +
               '<div class="mini-pair-info">' +
                 '<div class="mini-pair-geo" lang="ka">' + highlightGeoWord(card.wordGeo, card.letter) + '</div>' +
                 '<div class="mini-pair-ru">' + escapeHtml(card.translationRu) + '</div>' +
@@ -827,7 +972,7 @@
             '<div class="antonym-arrow" aria-hidden="true">↔</div>' +
 
             '<div class="mini-pair-card">' +
-              '<img src="' + escapeHtml(card.antonym.imageUrl) + '" alt="' + escapeHtml(card.antonym.translationRu) + '" />' +
+              '<img src="' + escapeHtml(card.antonym.imageUrl) + '" alt="' + escapeHtml(card.antonym.translationRu) + '" loading="lazy" decoding="async" />' +
               '<div class="mini-pair-info">' +
                 '<div class="mini-pair-geo" lang="ka">' + escapeHtml(card.antonym.wordGeo) + '</div>' +
                 '<div class="mini-pair-ru">' + escapeHtml(card.antonym.translationRu) + ' · ' + escapeHtml(card.antonym.translitRu) + '</div>' +
@@ -852,130 +997,271 @@
             escapeHtml(card.culturalNote) +
           '</div>' +
         '</div>' +
-
-        '<div class="leitner-actions">' +
-          '<div class="leitner-caption">Оцените запоминание (система интервального повторения Лейтнера):</div>' +
-          '<div class="leitner-buttons-grid">' +
-            '<button class="btn-leitner btn-leitner-hard" data-grade="hard" type="button">' +
-              '<span class="btn-leitner-title"><span class="dot dot-crimson"></span>Не помню</span>' +
-              '<span class="btn-leitner-sub">Повтор через 2 шага</span>' +
-            '</button>' +
-            '<button class="btn-leitner btn-leitner-medium" data-grade="medium" type="button">' +
-              '<span class="btn-leitner-title"><span class="dot dot-amber"></span>С трудом</span>' +
-              '<span class="btn-leitner-sub">В конце сессии</span>' +
-            '</button>' +
-            '<button class="btn-leitner btn-leitner-know" data-grade="know" type="button">' +
-              '<span class="btn-leitner-title"><span class="dot dot-green"></span>Знаю!</span>' +
-              '<span class="btn-leitner-sub">В выученные (+интервал)</span>' +
-            '</button>' +
-          '</div>' +
-        '</div>' +
       '</div>';
 
-    front.querySelectorAll('[data-flip-trigger]').forEach(function (el) {
-      el.addEventListener('click', function () { flipActiveCard(true); });
-    });
-    document.getElementById('btn-flip-to-back').addEventListener('click', function () { flipActiveCard(true); });
-    document.getElementById('btn-flip-to-front').addEventListener('click', function () { flipActiveCard(false); });
+    void cardEl.offsetHeight;
+    cardEl.classList.remove('is-instant-height');
+    syncCardSceneHeight(false);
+    preloadNextCardImage();
 
-    document.getElementById('btn-toggle-hint').addEventListener('click', function (e) {
-      const hintEl = document.getElementById('card-semantic-hint');
-      state.hintVisible = !state.hintVisible;
-      hintEl.classList.toggle('is-hidden', !state.hintVisible);
-      e.currentTarget.querySelector('span').textContent = state.hintVisible ? 'Скрыть намёк' : 'Показать намёк';
-    });
-
-    back.querySelectorAll('[data-grade]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        handleCardGrade(btn.getAttribute('data-grade'));
-      });
-    });
+    // Плавный влёт новой карточки при перелистывании колоды
+    if (moverEl && (slideDirection === 'next' || slideDirection === 'prev')) {
+      const enterX = slideDirection === 'next' ? 28 : -28;
+      moverEl.style.transition = 'none';
+      moverEl.style.transform = 'translate3d(' + enterX + 'px, 0, 0)';
+      moverEl.style.opacity = '0';
+      void moverEl.offsetWidth;
+      moverEl.style.transition = 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease';
+      moverEl.style.transform = 'translate3d(0, 0, 0)';
+      moverEl.style.opacity = '1';
+    }
   }
 
-  function handleCardGrade(grade) {
+  function handleCardGrade(grade, sourceBtn) {
     if (state.sessionIndex >= state.sessionQueue.length) return;
+    if (state.timers.grade) return;
     AudioEngine.stop();
 
-    const card = state.sessionQueue[state.sessionIndex];
-    const res = Storage.gradeCard(card.id, grade);
-
-    AudioEngine.haptic(grade === 'know' ? [15, 30, 20] : 28);
-    notifyBadges(res.unlockedBadges);
-
-    if (grade === 'hard' && state.sessionQueue.length < 220 && !card._requeuedHard) {
-      const copy = Object.assign({ _requeuedHard: true }, card);
-      const insertPos = Math.min(state.sessionQueue.length, state.sessionIndex + 3);
-      state.sessionQueue.splice(insertPos, 0, copy);
-    } else if (grade === 'medium' && !card._requeuedMedium) {
-      const copy = Object.assign({ _requeuedMedium: true }, card);
-      state.sessionQueue.push(copy);
+    if (sourceBtn) {
+      sourceBtn.classList.add('is-pressing');
     }
 
-    state.sessionIndex += 1;
-    updateHeaderAndDashboardStats();
-    populateDeckSelector();
-    renderActiveCard();
+    AudioEngine.haptic(grade === 'know' ? [14, 26, 18] : 22);
+
+    const advance = function () {
+      state.timers.grade = null;
+      if (sourceBtn) {
+        sourceBtn.classList.remove('is-pressing');
+      }
+
+      const card = state.sessionQueue[state.sessionIndex];
+      if (!card) return;
+      const res = Storage.gradeCard(card.id, grade);
+      notifyBadges(res.unlockedBadges);
+
+      if (grade === 'hard' && state.sessionQueue.length < 220 && !card._requeuedHard) {
+        const copy = Object.assign({ _requeuedHard: true }, card);
+        const insertPos = Math.min(state.sessionQueue.length, state.sessionIndex + 3);
+        state.sessionQueue.splice(insertPos, 0, copy);
+      } else if (grade === 'medium' && !card._requeuedMedium) {
+        const copy = Object.assign({ _requeuedMedium: true }, card);
+        state.sessionQueue.push(copy);
+      }
+
+      state.sessionIndex += 1;
+      updateHeaderAndDashboardStats();
+      populateDeckSelector();
+      renderActiveCard('next');
+    };
+
+    if (sourceBtn) {
+      state.timers.grade = setTimeout(advance, 110);
+    } else {
+      advance();
+    }
   }
 
-  function initSwipeGestures() {
-    const scene = document.getElementById('flip-scene');
-    const cardEl = document.getElementById('flip-card');
-    const badgeL = document.getElementById('swipe-badge-left');
-    const badgeR = document.getElementById('swipe-badge-right');
-    if (!scene || !cardEl) return;
+  function stepDeckCard(delta, animateSwipeOut) {
+    const nextIdx = state.sessionIndex + delta;
+    if (nextIdx < 0 || nextIdx >= state.sessionQueue.length) return false;
+    if (state.timers.swipe) return false;
 
-    cardEl.addEventListener('animationend', function (e) {
-      if (e.target === cardEl) {
-        cardEl.classList.remove('anim-to-back', 'anim-to-front');
+    AudioEngine.stop();
+    const dir = delta > 0 ? 'next' : 'prev';
+    const moverEl = document.getElementById('flashcard-mover');
+
+    if (animateSwipeOut && moverEl) {
+      const exitX = delta > 0 ? -105 : 105;
+      const exitDeg = delta > 0 ? -4.5 : 4.5;
+      moverEl.style.transition = 'transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.16s ease';
+      moverEl.style.transform = 'translate3d(' + exitX + 'px, 0, 0) rotateZ(' + exitDeg + 'deg)';
+      moverEl.style.opacity = '0';
+      AudioEngine.haptic(10);
+      state.timers.swipe = setTimeout(function () {
+        state.timers.swipe = null;
+        state.sessionIndex = nextIdx;
+        renderActiveCard(dir);
+      }, 160);
+    } else {
+      state.sessionIndex = nextIdx;
+      renderActiveCard(dir);
+    }
+    return true;
+  }
+
+  function initCardSceneInteractions() {
+    const viewCards = document.getElementById('view-cards');
+    const scene = document.getElementById('flip-scene');
+    const moverEl = document.getElementById('flashcard-mover');
+    const cardEl = document.getElementById('flip-card');
+    const leitnerBar = document.getElementById('card-leitner-bar');
+    const badgePrev = document.getElementById('swipe-badge-prev');
+    const badgeNext = document.getElementById('swipe-badge-next');
+    if (!viewCards || !scene || !moverEl || !cardEl) return;
+
+    initCardResizeObserver();
+
+    // Единое делегирование кликов внутри экрана карточек (без накопления слушателей при ререндере)
+    viewCards.addEventListener('click', function (e) {
+      const hintBtn = e.target.closest('#btn-toggle-hint');
+      if (hintBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const hintEl = document.getElementById('card-semantic-hint');
+        if (hintEl) {
+          state.hintVisible = !state.hintVisible;
+          hintEl.classList.toggle('is-hidden', !state.hintVisible);
+          const span = hintBtn.querySelector('span');
+          if (span) span.textContent = state.hintVisible ? 'Скрыть намёк' : 'Показать намёк';
+          syncCardSceneHeight(true);
+        }
+        return;
+      }
+
+      const sessionBtn = e.target.closest('[data-session-action]');
+      if (sessionBtn) {
+        const act = sessionBtn.getAttribute('data-session-action');
+        if (act === 'finish-to-quiz') {
+          const forced = state.deckMode.length === 1 ? state.deckMode : null;
+          switchView('quizzes');
+          startQuiz('daily', forced);
+        } else if (act === 'restart-deck') {
+          startCardSession(state.deckMode);
+        } else if (act === 'next-letter') {
+          const curMeta = getLetterMeta(state.deckMode);
+          const nextMeta = ALPHABET[curMeta.index % ALPHABET.length];
+          startCardSession(nextMeta.letter);
+        }
+        return;
+      }
+
+      const flipBtn = e.target.closest('[data-flip-btn]');
+      if (flipBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const dir = flipBtn.getAttribute('data-flip-btn');
+        flipActiveCard(dir === 'to-back');
+        return;
+      }
+
+      // Тап/клик по самой карточке (кроме кнопок звука, подсказки и финального экрана) плавно переворачивает карточку на месте
+      if (e.target.closest('#flip-card')) {
+        if (Date.now() - state.lastDragEndAt < 260) return;
+        if (e.target.closest('button, a, select, input, [data-no-flip]')) return;
+        const sel = window.getSelection ? String(window.getSelection()) : '';
+        if (sel && sel.length > 0) return;
+        flipActiveCard();
       }
     });
 
+    if (leitnerBar) {
+      leitnerBar.addEventListener('click', function (e) {
+        const gradeBtn = e.target.closest('[data-grade]');
+        if (!gradeBtn) return;
+        handleCardGrade(gradeBtn.getAttribute('data-grade'), gradeBtn);
+      });
+    }
+
+    // Умный горизонтальный свайп колоды (строго |dx| > |dy| * 1.5 и порог >= 65px, без помех вертикальному скроллу)
     let startX = 0;
     let startY = 0;
     let deltaX = 0;
+    let deltaY = 0;
     let tracking = false;
+    let gestureAxis = null; // null | 'x' | 'y'
 
     scene.addEventListener('touchstart', function (e) {
       if (e.touches.length !== 1 || state.sessionIndex >= state.sessionQueue.length) return;
-      if (e.target.closest('button')) return;
+      if (state.timers.swipe || state.timers.flip) return;
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       deltaX = 0;
+      deltaY = 0;
+      gestureAxis = null;
       tracking = true;
     }, { passive: true });
 
     scene.addEventListener('touchmove', function (e) {
-      if (!tracking) return;
+      if (!tracking || e.touches.length !== 1) return;
       const dx = e.touches[0].clientX - startX;
       const dy = e.touches[0].clientY - startY;
-      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dx) < 24) return;
-      deltaX = dx;
-      if (Math.abs(dx) > 18) {
-        const baseRotY = state.isFlipped ? 180 : 0;
-        const tilt = Math.max(-12, Math.min(12, dx / 14));
-        cardEl.classList.remove('anim-to-back', 'anim-to-front');
-        cardEl.style.transition = 'none';
-        cardEl.style.transform = 'translateX(' + (dx * 0.55) + 'px) rotateZ(' + (tilt * 0.4) + 'deg) rotateY(' + baseRotY + 'deg)';
-        badgeR.style.opacity = dx > 45 ? String(Math.min(1, (dx - 45) / 60)) : '0';
-        badgeL.style.opacity = dx < -45 ? String(Math.min(1, (-dx - 45) / 60)) : '0';
-      }
-    }, { passive: true });
 
-    scene.addEventListener('touchend', function () {
+      if (gestureAxis === null) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (Math.abs(dx) > Math.abs(dy) * 1.5) {
+          gestureAxis = 'x';
+        } else {
+          gestureAxis = 'y';
+        }
+      }
+
+      if (gestureAxis === 'y') {
+        if (Math.abs(dy) > 12) {
+          state.lastDragEndAt = Date.now();
+        }
+        return;
+      }
+
+      // Явный горизонтальный жест — блокируем случайный сдвиг по вертикали и плавно ведём карточку по оси X
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+
+      deltaX = dx;
+      deltaY = dy;
+
+      const canPrev = state.sessionIndex > 0;
+      const canNext = state.sessionIndex + 1 < state.sessionQueue.length;
+      const blockedEdge = (dx > 0 && !canPrev) || (dx < 0 && !canNext);
+
+      const tx = blockedEdge ? (dx * 0.22) : (dx * 0.80);
+      const maxTilt = blockedEdge ? 1.6 : 4.8; // Строго в пределах 4–6 градусов без заваливания
+      const tilt = Math.max(-maxTilt, Math.min(maxTilt, dx / 42));
+      const opacity = blockedEdge ? 0.92 : Math.max(0.56, 1 - Math.abs(dx) / 340);
+
+      moverEl.style.transition = 'none';
+      moverEl.style.transform = 'translate3d(' + tx.toFixed(1) + 'px, 0, 0) rotateZ(' + tilt.toFixed(2) + 'deg)';
+      moverEl.style.opacity = opacity.toFixed(3);
+
+      if (badgePrev) {
+        badgePrev.style.opacity = (dx > 34 && canPrev) ? String(Math.min(1, (dx - 34) / 42)) : '0';
+      }
+      if (badgeNext) {
+        badgeNext.style.opacity = (dx < -34 && canNext) ? String(Math.min(1, (-dx - 34) / 42)) : '0';
+      }
+    }, { passive: false });
+
+    function finishTouchGesture() {
       if (!tracking) return;
       tracking = false;
-      cardEl.style.transition = '';
-      badgeL.style.opacity = '0';
-      badgeR.style.opacity = '0';
 
-      if (deltaX > 95) {
-        handleCardGrade('know');
-      } else if (deltaX < -95) {
-        handleCardGrade('hard');
-      } else {
-        cardEl.style.transform = state.isFlipped ? 'rotateY(180deg)' : '';
+      if (badgePrev) badgePrev.style.opacity = '0';
+      if (badgeNext) badgeNext.style.opacity = '0';
+
+      if (gestureAxis !== 'x') {
+        gestureAxis = null;
+        return;
       }
-    });
+
+      state.lastDragEndAt = Date.now();
+      const isHorizontalCommit = Math.abs(deltaX) >= 65 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5;
+      const canPrev = state.sessionIndex > 0;
+      const canNext = state.sessionIndex + 1 < state.sessionQueue.length;
+
+      if (isHorizontalCommit && deltaX <= -65 && canNext) {
+        stepDeckCard(1, true);
+      } else if (isHorizontalCommit && deltaX >= 65 && canPrev) {
+        stepDeckCard(-1, true);
+      } else {
+        moverEl.style.transition = 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease';
+        moverEl.style.transform = 'translate3d(0, 0, 0) rotateZ(0deg)';
+        moverEl.style.opacity = '1';
+      }
+      gestureAxis = null;
+    }
+
+    scene.addEventListener('touchend', finishTouchGesture, { passive: true });
+    scene.addEventListener('touchcancel', finishTouchGesture, { passive: true });
   }
 
   /* ========================================================================
@@ -1335,7 +1621,7 @@
 
             '<div class="mp-words-duo">' +
               '<div class="mp-side">' +
-                '<img src="' + escapeHtml(leftImg) + '" alt="' + escapeHtml(mp.left.translationRu) + '" loading="lazy" />' +
+                '<img src="' + escapeHtml(leftImg) + '" alt="' + escapeHtml(mp.left.translationRu) + '" loading="lazy" decoding="async" />' +
                 '<div class="mp-side-body">' +
                   '<div class="mp-word-geo" lang="ka">' + highlightGeoWord(mp.left.wordGeo, mp.left.letter) + '</div>' +
                   '<div style="font-size:0.8rem;color:var(--slate-muted)">' + escapeHtml(mp.left.ipa) + ' · «' + escapeHtml(mp.left.translitRu) + '»</div>' +
@@ -1345,7 +1631,7 @@
               '</div>' +
 
               '<div class="mp-side">' +
-                '<img src="' + escapeHtml(rightImg) + '" alt="' + escapeHtml(mp.right.translationRu) + '" loading="lazy" />' +
+                '<img src="' + escapeHtml(rightImg) + '" alt="' + escapeHtml(mp.right.translationRu) + '" loading="lazy" decoding="async" />' +
                 '<div class="mp-side-body">' +
                   '<div class="mp-word-geo" lang="ka">' + highlightGeoWord(mp.right.wordGeo, mp.right.letter) + '</div>' +
                   '<div style="font-size:0.8rem;color:var(--slate-muted)">' + escapeHtml(mp.right.ipa) + ' · «' + escapeHtml(mp.right.translitRu) + '»</div>' +
@@ -1468,7 +1754,9 @@
     }
 
     document.getElementById('quiz-hub').classList.remove('is-hidden');
-    document.getElementById('quiz-arena').classList.add('is-hidden');
+    const arena = document.getElementById('quiz-arena');
+    arena.classList.add('is-hidden');
+    arena.innerHTML = '';
     const grid = document.getElementById('quiz-modes-grid');
     const sum = Storage.getSummary();
 
@@ -1664,7 +1952,7 @@
           options.map(function (opt) {
             return (
               '<button class="qa-photo-option" data-qa-choice="' + escapeHtml(opt.id) + '" type="button">' +
-                '<img src="' + escapeHtml(opt.imageUrl) + '" alt="Вариант ответа" />' +
+                '<img src="' + escapeHtml(opt.imageUrl) + '" alt="Вариант ответа" loading="lazy" decoding="async" />' +
               '</button>'
             );
           }).join('') +
@@ -1679,7 +1967,7 @@
       bodyHtml =
         '<h3 class="qa-question-title">Соберите грузинское слово из букв-кубиков</h3>' +
         '<div style="max-width:340px;margin:0 auto 12px;border-radius:14px;overflow:hidden;border:1px solid var(--border-warm)">' +
-          '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" style="width:100%;height:155px;object-fit:cover" />' +
+          '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" loading="lazy" decoding="async" style="width:100%;height:155px;object-fit:cover" />' +
         '</div>' +
         '<div style="text-align:center;margin-bottom:8px">' +
           '<strong style="font-size:1.15rem">' + escapeHtml(card.translationRu) + '</strong> <span style="color:var(--slate-muted)">(' + escapeHtml(card.translationEn) + ')</span>' +
@@ -1702,7 +1990,7 @@
       bodyHtml =
         '<h3 class="qa-question-title">Выберите антоним (противоположность) к слову</h3>' +
         '<div class="mini-pair-card" style="max-width:380px;margin:0 auto 16px;padding:12px">' +
-          '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" style="width:72px;height:72px" />' +
+          '<img src="' + escapeHtml(card.imageUrl) + '" alt="' + escapeHtml(card.translationRu) + '" loading="lazy" decoding="async" style="width:72px;height:72px" />' +
           '<div class="mini-pair-info">' +
             '<div style="font-family:var(--font-geo-serif);font-size:1.55rem;font-weight:700" lang="ka">' + escapeHtml(card.wordGeo) + '</div>' +
             '<div style="color:var(--slate-muted);font-size:0.9rem">' + escapeHtml(card.translationRu) + ' · ' + escapeHtml(card.ipa) + '</div>' +
@@ -1713,7 +2001,7 @@
           options.map(function (opt) {
             return (
               '<button class="qa-option-card" data-qa-choice="' + escapeHtml(opt.wordGeo) + '" type="button">' +
-                '<img src="' + escapeHtml(opt.imageUrl) + '" alt="' + escapeHtml(opt.translationRu) + '" />' +
+                '<img src="' + escapeHtml(opt.imageUrl) + '" alt="' + escapeHtml(opt.translationRu) + '" loading="lazy" decoding="async" />' +
                 '<div style="min-width:0">' +
                   '<div style="font-family:var(--font-geo-serif);font-size:1.25rem;font-weight:700;overflow-wrap:anywhere" lang="ka">' + escapeHtml(opt.wordGeo) + '</div>' +
                   '<div style="font-size:0.82rem;color:var(--slate-muted)">«' + escapeHtml(opt.translitRu) + '»</div>' +
@@ -1865,7 +2153,7 @@
       '</div>' +
       '<h3 class="qa-question-title">Соответствует ли фотография грузинскому слову?</h3>' +
       '<div style="max-width:420px;margin:0 auto;border:1px solid var(--border-warm);border-radius:16px;overflow:hidden;background:var(--bg-surface-alt)">' +
-        '<img src="' + escapeHtml(shownPhotoCard.imageUrl) + '" alt="Кадр блица" style="width:100%;height:210px;object-fit:cover" />' +
+        '<img src="' + escapeHtml(shownPhotoCard.imageUrl) + '" alt="Кадр блица" loading="lazy" decoding="async" style="width:100%;height:210px;object-fit:cover" />' +
         '<div style="padding:16px;text-align:center">' +
           '<div style="font-family:var(--font-geo-serif);font-size:2rem;font-weight:700" lang="ka">' + escapeHtml(card.wordGeo) + '</div>' +
           '<div style="color:var(--slate-muted);font-size:0.9rem">«' + escapeHtml(card.translitRu) + '»</div>' +
@@ -2083,19 +2371,11 @@
     });
 
     function stepCardPrev() {
-      if (state.sessionIndex > 0) {
-        AudioEngine.stop();
-        state.sessionIndex -= 1;
-        renderActiveCard();
-      }
+      stepDeckCard(-1, false);
     }
 
     function stepCardNext() {
-      if (state.sessionIndex + 1 < state.sessionQueue.length) {
-        AudioEngine.stop();
-        state.sessionIndex += 1;
-        renderActiveCard();
-      }
+      stepDeckCard(1, false);
     }
 
     document.getElementById('btn-prev-card').addEventListener('click', stepCardPrev);
@@ -2141,19 +2421,15 @@
           const slowBtn = document.getElementById('btn-card-audio-slow');
           AudioEngine.play(card.audioNormal, { slow: true, button: slowBtn, fallbackText: card.wordGeo });
         } else if (e.key === '1') {
-          handleCardGrade('hard');
+          handleCardGrade('hard', document.querySelector('#card-leitner-bar [data-grade="hard"]'));
         } else if (e.key === '2') {
-          handleCardGrade('medium');
+          handleCardGrade('medium', document.querySelector('#card-leitner-bar [data-grade="medium"]'));
         } else if (e.key === '3') {
-          handleCardGrade('know');
-        } else if (e.key === 'ArrowLeft' && state.sessionIndex > 0) {
-          AudioEngine.stop();
-          state.sessionIndex -= 1;
-          renderActiveCard();
-        } else if (e.key === 'ArrowRight' && state.sessionIndex + 1 < state.sessionQueue.length) {
-          AudioEngine.stop();
-          state.sessionIndex += 1;
-          renderActiveCard();
+          handleCardGrade('know', document.querySelector('#card-leitner-bar [data-grade="know"]'));
+        } else if (e.key === 'ArrowLeft') {
+          stepDeckCard(-1, false);
+        } else if (e.key === 'ArrowRight') {
+          stepDeckCard(1, false);
         }
       } else if (state.activeView === 'quizzes' && state.quizState && state.quizState.mode === 'blitz' && state.quizState._answerBlitz) {
         if (e.key === 'ArrowLeft') state.quizState._answerBlitz(false);
@@ -2161,7 +2437,7 @@
       }
     });
 
-    initSwipeGestures();
+    initCardSceneInteractions();
     updateHeaderAndDashboardStats();
     renderWordOfDay();
     renderAlphabetGrid();

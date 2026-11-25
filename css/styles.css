@@ -14,10 +14,13 @@
   --bg-parchment-deep: #E2E8F0;
   --bg-card: #FFFFFF;
   --bg-card-solid: #FFFFFF;
+  --bg-mobile-surface: rgba(255, 255, 255, 0.96);
+  --bg-mobile-elevated: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.96) 100%);
   --bg-header: rgba(248, 250, 252, 0.90);
+  --bg-header-mobile: rgba(255, 255, 255, 0.96);
   --bg-bottom-nav: rgba(255, 255, 255, 0.96);
   --bg-pad: #FCFDFE;
-  --bg-glass-pill: rgba(255, 255, 255, 0.92);
+  --bg-glass-pill: rgba(255, 255, 255, 0.95);
   --bg-toast: #0F172A;
   --text-toast: #F8FAFC;
 
@@ -102,10 +105,13 @@
   --bg-parchment-deep: #22293A;
   --bg-card: rgba(22, 26, 35, 0.82);
   --bg-card-solid: #161A23;
+  --bg-mobile-surface: rgba(22, 26, 35, 0.94);
+  --bg-mobile-elevated: linear-gradient(180deg, rgba(29, 35, 48, 0.96) 0%, rgba(22, 26, 35, 0.94) 100%);
   --bg-header: rgba(11, 13, 18, 0.88);
-  --bg-bottom-nav: rgba(13, 16, 23, 0.96);
+  --bg-header-mobile: rgba(15, 18, 26, 0.96);
+  --bg-bottom-nav: rgba(16, 20, 29, 0.96);
   --bg-pad: #10131B;
-  --bg-glass-pill: rgba(15, 18, 26, 0.86);
+  --bg-glass-pill: rgba(18, 22, 31, 0.94);
   --bg-toast: #181D27;
   --text-toast: #F8FAFC;
 
@@ -213,16 +219,9 @@ body {
   line-height: 1.5;
   min-height: 100vh;
   min-height: 100dvh;
-  /* Обязательный нижний отступ под фиксированный док-бар и системный бар DuckDuckGo / Safari / Chrome */
-  padding-bottom: calc(96px + env(safe-area-inset-bottom, 20px));
+  padding-bottom: 0;
   touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
-}
-
-@media (min-width: 980px) {
-  body {
-    padding-bottom: 44px;
-  }
 }
 
 .main-content,
@@ -304,6 +303,7 @@ img {
 .word-of-day-card,
 .letter-tile,
 .cards-toolbar,
+.card-leitner-bar,
 .visual-group-card,
 .stroke-picker-card,
 .stroke-canvas-card,
@@ -311,16 +311,41 @@ img {
 .quiz-mode-card,
 .quiz-arena,
 .modal-card {
-  background: var(--bg-card-solid);
+  background: var(--bg-mobile-elevated);
   box-shadow: var(--card-inner-highlight), var(--shadow-sm);
 }
 
-/* На десктопах включаем полный Glassmorphism и Spotlight */
-@media (hover: hover) and (pointer: fine) {
+/* На мобильных экранах (<= 768px) полностью отключаем тяжёлый backdrop-filter: blur,
+   заменяя его плотными градиентными стеклянными подложками для 60 FPS на слабых смартфонах */
+@media (max-width: 768px) {
+  .site-header {
+    background: var(--bg-header-mobile) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .mobile-bottom-nav {
+    background: var(--bg-bottom-nav) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .wod-tag,
+  .glass-pill,
+  .modal-backdrop {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .modal-backdrop {
+    background: rgba(7, 9, 14, 0.84) !important;
+  }
+}
+
+/* На десктопах (> 768px) включаем полный Glassmorphism и Spotlight */
+@media (min-width: 769px) and (hover: hover) and (pointer: fine) {
   .hero-intro,
   .word-of-day-card,
   .letter-tile,
   .cards-toolbar,
+  .card-leitner-bar,
   .visual-group-card,
   .stroke-picker-card,
   .stroke-canvas-card,
@@ -403,10 +428,16 @@ img {
   z-index: 50;
   width: 100%;
   max-width: 100%;
-  background: var(--bg-header);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--bg-header-mobile);
   border-bottom: 1px solid var(--border-warm);
+}
+
+@media (min-width: 769px) {
+  .site-header {
+    background: var(--bg-header);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
 }
 
 .header-inner {
@@ -670,19 +701,19 @@ img {
    СПОКОЙНЫЕ НАТИВНЫЕ ПЕРЕХОДЫ ЭКРАНОВ И КНОПКИ
    ========================================================================== */
 .view-section {
-  display: none;
-  padding: 16px 0 calc(28px + env(safe-area-inset-bottom, 16px));
+  display: none !important;
+  padding: 14px 0 calc(88px + env(safe-area-inset-bottom, 16px));
 }
 
-@media (min-width: 768px) {
+@media (min-width: 980px) {
   .view-section {
     padding: 24px 0 36px;
   }
 }
 
 .view-section.is-active {
-  display: block;
-  animation: calmFadeIn 0.25s var(--ease-calm) both;
+  display: block !important;
+  animation: calmFadeIn 0.24s var(--ease-calm) both;
 }
 
 .btn {
@@ -696,7 +727,7 @@ img {
   font-size: 0.9rem;
   border: 1px solid transparent;
   max-width: 100%;
-  transition: opacity 0.2s ease, transform 0.2s var(--ease-calm), background 0.2s ease, border-color 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s var(--ease-calm);
   text-decoration: none;
 }
 
@@ -1582,7 +1613,7 @@ img {
   justify-content: center;
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
-  transition: all 0.2s var(--ease-calm);
+  transition: transform 0.2s var(--ease-calm), opacity 0.2s ease;
 }
 
 @media (min-width: 820px) {
@@ -1603,66 +1634,64 @@ img {
   position: relative;
   width: 100%;
   max-width: 680px;
-  perspective: 1800px;
+  perspective: 1200px;
+  -webkit-perspective: 1200px;
   touch-action: pan-y;
+}
+
+.flashcard-mover {
+  width: 100%;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
 }
 
 .swipe-badge {
   position: absolute;
-  top: 16px;
+  top: 14px;
   z-index: 20;
-  padding: 6px 14px;
+  padding: 5px 13px;
   border-radius: var(--radius-pill);
   font-weight: 700;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 0.76rem;
+  letter-spacing: 0.03em;
+  background: var(--bg-glass-pill);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-bright);
+  box-shadow: var(--shadow-sm);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
 
-.swipe-badge-left { left: 14px; background: var(--crimson); color: #FFF; }
-.swipe-badge-right { right: 14px; background: var(--green); color: #FFF; }
-
-@keyframes flipToBackWeight {
-  0%   { transform: scale(1) rotateY(0deg); }
-  45%  { transform: scale(1.018) rotateY(92deg); }
-  100% { transform: scale(1) rotateY(180deg); }
-}
-
-@keyframes flipToFrontWeight {
-  0%   { transform: scale(1) rotateY(180deg); }
-  45%  { transform: scale(1.018) rotateY(88deg); }
-  100% { transform: scale(1) rotateY(0deg); }
-}
+.swipe-badge-prev { left: 14px; }
+.swipe-badge-next { right: 14px; }
 
 .flip-card {
   position: relative;
   width: 100%;
   transform-style: preserve-3d;
-  transition: transform 0.56s var(--ease-spring);
+  -webkit-transform-style: preserve-3d;
+  transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1), height 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
   outline: none;
+  cursor: pointer;
+}
+
+.flip-card.is-instant-height {
+  transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .flip-card.is-flipped {
   transform: rotateY(180deg);
 }
 
-.flip-card.anim-to-back {
-  animation: flipToBackWeight 0.56s var(--ease-spring) forwards;
-}
-
-.flip-card.anim-to-front {
-  animation: flipToFrontWeight 0.56s var(--ease-spring) forwards;
-}
-
 .card-face {
   width: 100%;
   min-width: 0;
+  height: auto;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  background: var(--bg-card-solid);
+  background: var(--bg-mobile-elevated);
   border: 1px solid var(--border-warm);
   border-radius: var(--radius-lg);
   box-shadow: var(--card-inner-highlight), var(--shadow-lg);
@@ -1671,53 +1700,33 @@ img {
   flex-direction: column;
 }
 
-/* Активная грань задаёт точную высоту карточки без пустого поля внизу на смартфоне */
-.flip-card:not(.is-flipped) .card-front {
+/* В покое неактивная сторона строго display: none, чтобы она НЕ создавала пустого скролла снизу страницы */
+.flip-card:not(.is-flipped):not(.is-flipping) .card-front {
   position: relative;
-  pointer-events: auto;
+  display: flex;
 }
 
-.flip-card:not(.is-flipped) .card-back {
+.flip-card:not(.is-flipped):not(.is-flipping) .card-back {
+  display: none !important;
+}
+
+.flip-card.is-flipped:not(.is-flipping) .card-front {
+  display: none !important;
+}
+
+.flip-card.is-flipped:not(.is-flipping) .card-back {
+  position: relative;
+  display: flex;
+}
+
+/* Во время плавного 3D-переворота обе грани наложены в единой плоскости вращения */
+.flip-card.is-flipping .card-front,
+.flip-card.is-flipping .card-back {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  pointer-events: none;
-}
-
-.flip-card.is-flipped .card-front {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  pointer-events: none;
-}
-
-.flip-card.is-flipped .card-back {
-  position: relative;
-  pointer-events: auto;
-}
-
-.card-face::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 12;
-  background: linear-gradient(112deg, transparent 32%, rgba(255, 255, 255, 0.12) 48%, rgba(251, 191, 36, 0.10) 52%, transparent 68%);
-  transform: translateX(-120%);
-  opacity: 0;
-}
-
-.flip-card.anim-to-back .card-face::after,
-.flip-card.anim-to-front .card-face::after {
-  animation: cardSurfaceSheen 0.56s var(--ease-spring);
-}
-
-@keyframes cardSurfaceSheen {
-  0%   { transform: translateX(-110%); opacity: 0; }
-  35%  { opacity: 1; }
-  100% { transform: translateX(110%); opacity: 0; }
+  display: flex;
 }
 
 .card-back {
@@ -2149,23 +2158,34 @@ img {
   margin-bottom: 4px;
 }
 
-/* Кнопки оценки Лейтнера — чётко помещаются в 3 колонки на 360px */
-.leitner-actions {
-  padding-top: 10px;
-  border-top: 1px solid var(--border-warm);
+/* Крупная тактильная панель оценки Лейтнера прямо под 3D-карточкой */
+.card-leitner-bar {
+  width: 100%;
+  max-width: 680px;
+  margin: 12px auto 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-warm);
+}
+
+@media (min-width: 640px) {
+  .card-leitner-bar {
+    margin-top: 14px;
+    padding: 14px 18px;
+  }
 }
 
 .leitner-caption {
   text-align: center;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   color: var(--slate-muted);
-  margin-bottom: 8px;
+  margin-bottom: 9px;
 }
 
 .leitner-buttons-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
+  gap: 8px;
 }
 
 .btn-leitner {
@@ -2173,31 +2193,39 @@ img {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 9px 4px;
-  border-radius: 11px;
-  border: 1px solid transparent;
+  gap: 3px;
+  min-height: 56px;
+  padding: 10px 6px;
+  border-radius: 13px;
+  border: 1.5px solid transparent;
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 0.84rem;
   text-align: center;
   min-width: 0;
-  transition: transform 0.18s var(--ease-calm);
+  will-change: transform;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
 }
 
-.btn-leitner:active {
-  transform: scale(0.97);
+.btn-leitner:active,
+.btn-leitner.is-pressing {
+  transform: scale(0.93);
 }
 
 @media (min-width: 540px) {
   .btn-leitner {
-    padding: 10px 8px;
-    font-size: 0.88rem;
+    min-height: 62px;
+    padding: 12px 10px;
+    font-size: 0.92rem;
   }
 }
 
 @media (hover: hover) and (pointer: fine) {
   .btn-leitner:hover {
     transform: translateY(-2px);
+  }
+  .btn-leitner:active,
+  .btn-leitner.is-pressing {
+    transform: scale(0.94);
   }
 }
 
@@ -2255,11 +2283,11 @@ kbd {
 }
 
 .trainer-panel {
-  display: none;
+  display: none !important;
 }
 
 .trainer-panel.is-active {
-  display: block;
+  display: block !important;
   animation: calmFadeIn 0.24s var(--ease-calm) both;
 }
 
@@ -2948,8 +2976,6 @@ kbd {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
   background: var(--bg-bottom-nav);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   border-top: 1px solid var(--border-warm);
   box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
   /* Гарантированный отступ под нижнюю системную панель браузера (DuckDuckGo / Safari / Chrome) */
@@ -2960,6 +2986,13 @@ kbd {
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
   touch-action: manipulation;
+}
+
+@media (min-width: 769px) {
+  .mobile-bottom-nav {
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
 }
 
 @media (min-width: 980px) {
@@ -3131,9 +3164,10 @@ kbd {
 
 @media (prefers-reduced-motion: reduce) {
   .stagger-item,
-  .view-section.is-active,
-  .flip-card.anim-to-back,
-  .flip-card.anim-to-front {
+  .view-section.is-active {
     animation: none !important;
+  }
+  .flip-card {
+    transition: none !important;
   }
 }
