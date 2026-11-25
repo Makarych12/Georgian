@@ -1,0 +1,27 @@
+# OS & System files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python & caches
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary generator scripts
+build_media.py
+gen_cards_part1.py
+gen_cards_part2.py
+gen_cards_part3.py
+assemble_cards.py
+
+# Logs
+*.log
