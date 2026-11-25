@@ -936,7 +936,7 @@
             '<div class="example-gloss">' + escapeHtml(ex.gloss) + '</div>' +
             '<div class="example-ru">' + escapeHtml(ex.ru) + '</div>' +
           '</div>' +
-          '<button class="tile-audio-mini" style="position:static;flex-shrink:0;width:34px;height:34px" type="button" data-play-src="' + escapeHtml(ex.audio) + '" data-play-fallback="' + escapeHtml(ex.geo) + '" aria-label="Прослушать пример">' +
+          '<button class="tile-audio-mini" style="position:static;flex-shrink:0;width:40px;height:40px" type="button" data-play-src="' + escapeHtml(ex.audio) + '" data-play-fallback="' + escapeHtml(ex.geo) + '" aria-label="Прослушать пример">' +
             ICONS.speaker +
           '</button>' +
         '</div>'
@@ -2003,8 +2003,8 @@
               '<button class="qa-option-card" data-qa-choice="' + escapeHtml(opt.wordGeo) + '" type="button">' +
                 '<img src="' + escapeHtml(opt.imageUrl) + '" alt="' + escapeHtml(opt.translationRu) + '" loading="lazy" decoding="async" />' +
                 '<div style="min-width:0">' +
-                  '<div style="font-family:var(--font-geo-serif);font-size:1.25rem;font-weight:700;overflow-wrap:anywhere" lang="ka">' + escapeHtml(opt.wordGeo) + '</div>' +
-                  '<div style="font-size:0.82rem;color:var(--slate-muted)">«' + escapeHtml(opt.translitRu) + '»</div>' +
+                  '<div style="font-family:var(--font-geo-serif);font-size:1.38rem;font-weight:700;overflow-wrap:anywhere" lang="ka">' + escapeHtml(opt.wordGeo) + '</div>' +
+                  '<div style="font-size:0.9rem;color:var(--slate-muted)">«' + escapeHtml(opt.translitRu) + '»</div>' +
                 '</div>' +
               '</button>'
             );
@@ -2160,8 +2160,8 @@
         '</div>' +
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:420px;margin:18px auto 0">' +
-        '<button class="btn-leitner btn-leitner-hard" id="blitz-btn-false" style="padding:14px" type="button">Неверно (←)</button>' +
-        '<button class="btn-leitner btn-leitner-know" id="blitz-btn-true" style="padding:14px" type="button">Верно (→)</button>' +
+        '<button class="btn-leitner btn-leitner-hard" id="blitz-btn-false" style="min-height:58px;padding:14px;font-size:1rem" type="button">Неверно (←)</button>' +
+        '<button class="btn-leitner btn-leitner-know" id="blitz-btn-true" style="min-height:58px;padding:14px;font-size:1rem" type="button">Верно (→)</button>' +
       '</div>';
 
     document.getElementById('blitz-exit-btn').addEventListener('click', function () {
@@ -2273,10 +2273,157 @@
   }
 
   /* ========================================================================
+     PWA: SERVICE WORKER + УСТАНОВКА ПРИЛОЖЕНИЯ НА ГЛАВНЫЙ ЭКРАН
+     ======================================================================== */
+  const PWA_DISMISS_KEY = 'georgian_cards_pwa_banner_dismissed';
+  let deferredInstallPrompt = null;
+
+  function isStandaloneApp() {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+      return true;
+    }
+    if (window.navigator && window.navigator.standalone === true) {
+      return true;
+    }
+    return false;
+  }
+
+  function syncPwaInstallUI() {
+    const hdrBtn = document.getElementById('btn-header-install');
+    const banner = document.getElementById('pwa-install-banner');
+    const bannerLabel = document.getElementById('pwa-banner-btn-label');
+
+    if (isStandaloneApp()) {
+      if (hdrBtn) hdrBtn.classList.add('is-hidden');
+      if (banner) banner.classList.add('is-hidden');
+      return;
+    }
+
+    let dismissed = false;
+    try {
+      dismissed = window.sessionStorage.getItem(PWA_DISMISS_KEY) === '1';
+    } catch (_) {}
+
+    if (deferredInstallPrompt) {
+      if (hdrBtn) {
+        hdrBtn.classList.remove('is-hidden');
+        hdrBtn.setAttribute('title', 'Установить приложение Georgian Cards');
+      }
+      if (banner && !dismissed) {
+        banner.classList.remove('is-hidden');
+      }
+      if (bannerLabel) {
+        bannerLabel.textContent = 'Установить приложение';
+      }
+    } else {
+      // Если браузер ещё не прислал beforeinstallprompt (или это iOS/Safari), показываем подсказку «На экран Домой»
+      if (hdrBtn) {
+        hdrBtn.classList.remove('is-hidden');
+        hdrBtn.setAttribute('title', 'Добавить на главный экран');
+      }
+      if (banner && !dismissed) {
+        banner.classList.remove('is-hidden');
+      }
+      if (bannerLabel) {
+        bannerLabel.textContent = 'На экран Домой';
+      }
+    }
+  }
+
+  function triggerPwaInstall() {
+    AudioEngine.haptic(14);
+    if (deferredInstallPrompt) {
+      const promptEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      promptEvent.prompt();
+      if (promptEvent.userChoice && typeof promptEvent.userChoice.then === 'function') {
+        promptEvent.userChoice.then(function (choice) {
+          if (choice && choice.outcome === 'accepted') {
+            const hdrBtn = document.getElementById('btn-header-install');
+            const banner = document.getElementById('pwa-install-banner');
+            if (hdrBtn) hdrBtn.classList.add('is-hidden');
+            if (banner) banner.classList.add('is-hidden');
+            showToast('Установка Georgian Cards запущена!');
+          } else {
+            syncPwaInstallUI();
+          }
+        }).catch(function () {
+          syncPwaInstallUI();
+        });
+      }
+      return;
+    }
+
+    const ua = (window.navigator && window.navigator.userAgent) || '';
+    if (/iphone|ipad|ipod/i.test(ua)) {
+      showToast('На iPhone/iPad: нажмите «Поделиться» внизу браузера и выберите «На экран «Домой»».');
+    } else {
+      showToast('Откройте меню браузера (⋮) и выберите «Установить приложение» или «Добавить на гл. экран».');
+    }
+  }
+
+  function initPwaSupport() {
+    if ('serviceWorker' in navigator) {
+      const proto = window.location.protocol;
+      const host = window.location.hostname;
+      if (proto === 'https:' || host === 'localhost' || host === '127.0.0.1') {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function () {});
+        });
+      }
+    }
+
+    const hdrBtn = document.getElementById('btn-header-install');
+    const bannerBtn = document.getElementById('btn-banner-install');
+    const dismissBtn = document.getElementById('btn-dismiss-pwa-banner');
+
+    if (hdrBtn) {
+      hdrBtn.addEventListener('click', triggerPwaInstall);
+    }
+    if (bannerBtn) {
+      bannerBtn.addEventListener('click', triggerPwaInstall);
+    }
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', function () {
+        const banner = document.getElementById('pwa-install-banner');
+        if (banner) banner.classList.add('is-hidden');
+        try {
+          window.sessionStorage.setItem(PWA_DISMISS_KEY, '1');
+        } catch (_) {}
+      });
+    }
+
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      syncPwaInstallUI();
+    });
+
+    window.addEventListener('appinstalled', function () {
+      deferredInstallPrompt = null;
+      const hBtn = document.getElementById('btn-header-install');
+      const bEl = document.getElementById('pwa-install-banner');
+      if (hBtn) hBtn.classList.add('is-hidden');
+      if (bEl) bEl.classList.add('is-hidden');
+      showToast('Приложение Georgian Cards добавлено на главный экран!');
+    });
+
+    if (window.matchMedia) {
+      const mq = window.matchMedia('(display-mode: standalone)');
+      if (typeof mq.addEventListener === 'function') {
+        mq.addEventListener('change', syncPwaInstallUI);
+      }
+    }
+
+    syncPwaInstallUI();
+  }
+
+  /* ========================================================================
      ИНИЦИАЛИЗАЦИЯ И ГЛОБАЛЬНЫЕ ОБРАБОТЧИКИ
      ======================================================================== */
   function init() {
     initThemeSwitcher();
+    initPwaSupport();
     initInteractiveSpotlight();
     initAudioDelegation();
 

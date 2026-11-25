@@ -3,7 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#F8FAFC" id="meta-theme-color" />
+  <meta name="theme-color" content="#0B0D12" id="meta-theme-color" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Georgian Cards" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png" />
   <title>Georgian Cards · ქართული ბარათები — Изучение грузинского языка по карточкам</title>
   <meta name="description" content="Интерактивная платформа для освоения грузинского алфавита Мхедрули (33 буквы, 165 умных карточек), фонетики, лексики и антонимов с помощью 3D-карточек, живых фотографий Грузии и викторин." />
 
@@ -98,6 +106,15 @@
           <span id="hdr-badges-count">0</span>
         </button>
 
+        <!-- Кнопка установки PWA-приложения на главный экран -->
+        <button class="btn-pwa-header" id="btn-header-install" type="button" title="Установить приложение на главный экран" aria-label="Установить приложение">
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.85">
+            <path d="M10 3v9.2M6.6 8.8L10 12.2l3.4-3.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M4 14.2v1.6a1.4 1.4 0 0 0 1.4 1.4h9.2a1.4 1.4 0 0 0 1.4-1.4v-1.6" stroke-linecap="round" />
+          </svg>
+          <span class="btn-pwa-header-label">Установить</span>
+        </button>
+
         <!-- Переключатель темы «Светлая / Тёмная» -->
         <button class="theme-switcher" id="btn-theme-toggle" type="button" aria-label="Переключить светлую или тёмную тему" title="Переключить тему: Светлая / Тёмная">
           <span class="theme-switcher-track" aria-hidden="true">
@@ -125,6 +142,31 @@
          РАЗДЕЛ 1: ГЛАВНАЯ СТРАНИЦА (ДАШБОРД 33 БУКВ)
          ========================================== -->
     <section id="view-dashboard" class="view-section is-active" aria-labelledby="dashboard-heading">
+      <!-- Ненавязчивый баннер установки PWA-приложения на смартфон -->
+      <div class="pwa-install-banner" id="pwa-install-banner" role="region" aria-label="Установка приложения Georgian Cards">
+        <div class="pwa-banner-info">
+          <img class="pwa-banner-icon" src="assets/icons/icon-192.png" alt="Иконка Georgian Cards" width="46" height="46" loading="lazy" decoding="async" />
+          <div class="pwa-banner-text">
+            <strong class="pwa-banner-title">Установите Georgian Cards как приложение</strong>
+            <span class="pwa-banner-sub">Полноэкранный режим на телефоне и доступ к карточкам и озвучке без интернета</span>
+          </div>
+        </div>
+        <div class="pwa-banner-actions">
+          <button class="btn btn-primary btn-sm" id="btn-banner-install" type="button">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9">
+              <path d="M10 3v9.2M6.6 8.8L10 12.2l3.4-3.4" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M4 14.2v1.6a1.4 1.4 0 0 0 1.4 1.4h9.2a1.4 1.4 0 0 0 1.4-1.4v-1.6" stroke-linecap="round" />
+            </svg>
+            <span id="pwa-banner-btn-label">Установить приложение</span>
+          </button>
+          <button class="pwa-banner-close" id="btn-dismiss-pwa-banner" type="button" aria-label="Скрыть подсказку об установке">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
       <!-- Верхний баннер прогресса и Быстрый старт -->
       <div class="dashboard-hero">
         <div class="hero-intro">
